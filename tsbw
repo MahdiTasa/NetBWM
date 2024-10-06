@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# پرسش برای انتخاب حالت گزارش
+# Prompt user to select report type
 echo "Choose a report type:"
 echo "1) Hourly (-h)"
 echo "2) Daily (-d)"
 echo "3) Monthly (-m)"
 read -p "Enter the number (1-3): " choice
 
-# تعیین نوع گزارش بر اساس ورودی کاربر
+# Determine report type based on user input
 case $choice in
     1) report_type="-h";;
     2) report_type="-d";;
@@ -15,10 +15,10 @@ case $choice in
     *) echo "Invalid choice."; exit 1;;
 esac
 
-# گرفتن خروجی vnstat بر اساس نوع انتخاب شده
+# Get vnstat output based on selected report type
 vnstat_output=$(vnstat $report_type)
 
-# تعیین فیلدهای لازم بر اساس نوع گزارش
+# Extract relevant fields based on report type
 case $report_type in
     -h)
         current_hour=$(date +"%H")
@@ -34,32 +34,46 @@ case $report_type in
         ;;
 esac
 
-# بررسی اینکه آیا اطلاعاتی موجود است یا خیر
+# Check if data is available for the selected period
 if [ -z "$line" ]; then
   echo "No data available for the chosen period."
   exit 1
 fi
 
-# استخراج مقدار دریافت (rx) از خط
+# Extract received (rx) and transmitted (tx) values from the line
 rx_value=$(echo $line | awk '{print $2, $3}')
+tx_value=$(echo $line | awk '{print $5, $6}')
 
-# استخراج عدد و واحد
+# Extract number and unit for received and transmitted values
 rx_value_number=$(echo $rx_value | awk '{print $1}')
 rx_value_unit=$(echo $rx_value | awk '{print $2}')
+tx_value_number=$(echo $tx_value | awk '{print $1}')
+tx_value_unit=$(echo $tx_value | awk '{print $2}')
 
-# تبدیل واحد به بیت برای محاسبه نرخ
-if [[ $rx_value_unit == "GiB" ]]; then
-  rx_in_bits=$(echo "$rx_value_number * 1024 * 1024 * 1024 * 8" | bc)
-elif [[ $rx_value_unit == "MiB" ]]; then
-  rx_in_bits=$(echo "$rx_value_number * 1024 * 1024 * 8" | bc)
-elif [[ $rx_value_unit == "KiB" ]]; then
-  rx_in_bits=$(echo "$rx_value_number * 1024 * 8" | bc)
-else
-  echo "Unknown unit: $rx_value_unit"
-  exit 1
-fi
+# Convert units to bits for received and transmitted values
+convert_to_bits() {
+  local value_number=$1
+  local value_unit=$2
+  local value_in_bits
 
-# تعیین مدت زمان برای محاسبه نرخ
+  if [[ $value_unit == "GiB" ]]; then
+    value_in_bits=$(echo "$value_number * 1024 * 1024 * 1024 * 8" | bc)
+  elif [[ $value_unit == "MiB" ]]; then
+    value_in_bits=$(echo "$value_number * 1024 * 1024 * 8" | bc)
+  elif [[ $value_unit == "KiB" ]]; then
+    value_in_bits=$(echo "$value_number * 1024 * 8" | bc)
+  else
+    echo "Unknown unit: $value_unit"
+    exit 1
+  fi
+
+  echo $value_in_bits
+}
+
+rx_in_bits=$(convert_to_bits $rx_value_number $rx_value_unit)
+tx_in_bits=$(convert_to_bits $tx_value_number $tx_value_unit)
+
+# Determine duration for rate calculation
 if [[ $report_type == "-h" ]]; then
   duration=3600
 elif [[ $report_type == "-d" ]]; then
@@ -68,23 +82,38 @@ elif [[ $report_type == "-m" ]]; then
   duration=$((30 * 24 * 3600))
 fi
 
-# محاسبه نرخ بر حسب بیت بر ثانیه
+# Calculate receive and transmit rates in bits per second
 rx_rate_bits=$(echo "$rx_in_bits / $duration" | bc -l)
+tx_rate_bits=$(echo "$tx_in_bits / $duration" | bc -l)
 
-# نمایش نرخ دریافت با انتخاب هوشمند واحد
-if (( $(echo "$rx_rate_bits >= 1000000000" | bc -l) )); then
-  rx_rate=$(echo "$rx_rate_bits / 1000000000" | bc -l)
-  unit="Gbit/s"
-elif (( $(echo "$rx_rate_bits >= 1000000" | bc -l) )); then
-  rx_rate=$(echo "$rx_rate_bits / 1000000" | bc -l)
-  unit="Mbit/s"
-elif (( $(echo "$rx_rate_bits >= 1000" | bc -l) )); then
-  rx_rate=$(echo "$rx_rate_bits / 1000" | bc -l)
-  unit="Kbit/s"
-else
-  rx_rate=$rx_rate_bits
-  unit="bit/s"
-fi
+# Function to convert rate to appropriate unit
+display_rate() {
+  local rate_bits=$1
+  local rate
+  local unit
 
-# نمایش نرخ دریافت
-printf "Receive rate for the chosen period: %.2f %s\n" $rx_rate $unit
+  if (( $(echo "$rate_bits >= 1000000000" | bc -l) )); then
+    rate=$(echo "$rate_bits / 1000000000" | bc -l)
+    unit="Gbit/s"
+  elif (( $(echo "$rate_bits >= 1000000" | bc -l) )); then
+    rate=$(echo "$rate_bits / 1000000" | bc -l)
+    unit="Mbit/s"
+  elif (( $(echo "$rate_bits >= 1000" | bc -l) )); then
+    rate=$(echo "$rate_bits / 1000" | bc -l)
+    unit="Kbit/s"
+  else
+    rate=$rate_bits
+    unit="bit/s"
+  fi
+
+  printf "%.2f %s" $rate $unit
+}
+
+# Display traffic usage and bandwidth rates
+printf "Traffic Usage for the chosen period:\n"
+printf "Received: %s %s\n" $rx_value_number $rx_value_unit
+printf "Transmitted: %s %s\n" $tx_value_number $tx_value_unit
+
+printf "\nBandwidth Rates:\n"
+printf "Receive rate: %s\n" "$(display_rate $rx_rate_bits)"
+printf "Transmit rate: %s\n" "$(display_rate $tx_rate_bits)"
