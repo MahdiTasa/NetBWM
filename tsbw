@@ -109,11 +109,17 @@ display_rate() {
   printf "%.2f %s" $rate $unit
 }
 
-# Display traffic usage and bandwidth rates in a table format
-printf "\n%-20s %-20s\n" "Traffic Usage" ""
-printf "%-20s %-10s %s\n" "Received:" "$rx_value_number" "$rx_value_unit"
-printf "%-20s %-10s %s\n" "Transmitted:" "$tx_value_number" "$tx_value_unit"
+# Display traffic usage and bandwidth rates in a professional table format
+printf "\n+----------------------+--------------------+\n"
+printf "| %-20s | %-18s |\n" "Traffic Usage" ""
+printf "+----------------------+--------------------+\n"
+printf "| %-20s | %-10s %s |\n" "Received:" "$rx_value_number" "$rx_value_unit"
+printf "| %-20s | %-10s %s |\n" "Transmitted:" "$tx_value_number" "$tx_value_unit"
+printf "+----------------------+--------------------+\n"
 
-printf "\n%-20s %-20s\n" "Bandwidth Rates" ""
-printf "%-20s %s\n" "Receive rate:" "$(display_rate $rx_rate_bits)"
-printf "%-20s %s\n" "Transmit rate:" "$(display_rate $tx_rate_bits)"
+printf "\n+----------------------+--------------------+\n"
+printf "| %-20s | %-18s |\n" "Bandwidth Rates" ""
+printf "+----------------------+--------------------+\n"
+printf "| %-20s | %-18s |\n" "Receive rate:" "$(display_rate $rx_rate_bits)"
+printf "| %-20s | %-18s |\n" "Transmit rate:" "$(display_rate $tx_rate_bits)"
+printf "+----------------------+--------------------+\n"
