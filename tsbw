@@ -1,0 +1,90 @@
+#!/bin/bash
+
+# پرسش برای انتخاب حالت گزارش
+echo "Choose a report type:"
+echo "1) Hourly (-h)"
+echo "2) Daily (-d)"
+echo "3) Monthly (-m)"
+read -p "Enter the number (1-3): " choice
+
+# تعیین نوع گزارش بر اساس ورودی کاربر
+case $choice in
+    1) report_type="-h";;
+    2) report_type="-d";;
+    3) report_type="-m";;
+    *) echo "Invalid choice."; exit 1;;
+esac
+
+# گرفتن خروجی vnstat بر اساس نوع انتخاب شده
+vnstat_output=$(vnstat $report_type)
+
+# تعیین فیلدهای لازم بر اساس نوع گزارش
+case $report_type in
+    -h)
+        current_hour=$(date +"%H")
+        line=$(echo "$vnstat_output" | grep "$current_hour:00")
+        ;;
+    -d)
+        current_date=$(date +"%Y-%m-%d")
+        line=$(echo "$vnstat_output" | grep "$current_date")
+        ;;
+    -m)
+        current_month=$(date +"%Y-%m")
+        line=$(echo "$vnstat_output" | grep "$current_month")
+        ;;
+esac
+
+# بررسی اینکه آیا اطلاعاتی موجود است یا خیر
+if [ -z "$line" ]; then
+  echo "No data available for the chosen period."
+  exit 1
+fi
+
+# استخراج مقدار دریافت (rx) از خط
+rx_value=$(echo $line | awk '{print $2, $3}')
+
+# استخراج عدد و واحد
+rx_value_number=$(echo $rx_value | awk '{print $1}')
+rx_value_unit=$(echo $rx_value | awk '{print $2}')
+
+# تبدیل واحد به بیت برای محاسبه نرخ
+if [[ $rx_value_unit == "GiB" ]]; then
+  rx_in_bits=$(echo "$rx_value_number * 1024 * 1024 * 1024 * 8" | bc)
+elif [[ $rx_value_unit == "MiB" ]]; then
+  rx_in_bits=$(echo "$rx_value_number * 1024 * 1024 * 8" | bc)
+elif [[ $rx_value_unit == "KiB" ]]; then
+  rx_in_bits=$(echo "$rx_value_number * 1024 * 8" | bc)
+else
+  echo "Unknown unit: $rx_value_unit"
+  exit 1
+fi
+
+# تعیین مدت زمان برای محاسبه نرخ
+if [[ $report_type == "-h" ]]; then
+  duration=3600
+elif [[ $report_type == "-d" ]]; then
+  duration=$((24 * 3600))
+elif [[ $report_type == "-m" ]]; then
+  duration=$((30 * 24 * 3600))
+fi
+
+# محاسبه نرخ بر حسب بیت بر ثانیه
+rx_rate_bits=$(echo "$rx_in_bits / $duration" | bc -l)
+
+# نمایش نرخ دریافت با انتخاب هوشمند واحد
+if (( $(echo "$rx_rate_bits >= 1000000000" | bc -l) )); then
+  rx_rate=$(echo "$rx_rate_bits / 1000000000" | bc -l)
+  unit="Gbit/s"
+elif (( $(echo "$rx_rate_bits >= 1000000" | bc -l) )); then
+  rx_rate=$(echo "$rx_rate_bits / 1000000" | bc -l)
+  unit="Mbit/s"
+elif (( $(echo "$rx_rate_bits >= 1000" | bc -l) )); then
+  rx_rate=$(echo "$rx_rate_bits / 1000" | bc -l)
+  unit="Kbit/s"
+else
+  rx_rate=$rx_rate_bits
+  unit="bit/s"
+fi
+
+# نمایش نرخ دریافت
+printf "Receive rate for the chosen period: %.2f %s\n" $rx_rate $unit
