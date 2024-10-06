@@ -11,7 +11,7 @@ NetBWM is a simple 🖥️ script that 📡 monitors 🌐 bandwidth usage and ca
 To install NetBWM, run the following command:
 
 ```bash
-curl -s https://raw.githubusercontent.com/mahditasa/NetBWM/main/setup.sh | sudo bash
+curl -s https://raw.githubusercontent.com/MahdiTasa/NetBWM/master/setup.sh | sudo bash
 ```
 
 This command will:
