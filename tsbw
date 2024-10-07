@@ -81,7 +81,8 @@ elif [[ $report_type == "-d" ]]; then
   duration=$((current_hour * 3600))
 elif [[ $report_type == "-m" ]]; then
   day_of_month=$(date +"%d")
-  duration=$((day_of_month * 24 * 3600))
+  current_hour=$(date +"%H")
+  duration=$(((day_of_month - 1) * 24 * 3600 + current_hour * 3600))
 fi
 
 # Calculate receive and transmit rates in bits per second
@@ -125,3 +126,13 @@ printf "+----------------------+--------------------+\n"
 printf "| %-20s | %-18s |\n" "Receive rate:" "$(display_rate $rx_rate_bits)"
 printf "| %-20s | %-18s |\n" "Transmit rate:" "$(display_rate $tx_rate_bits)"
 printf "+----------------------+--------------------+\n"
+
+# Display hourly traffic as a simple chart (for hourly report only)
+if [[ $report_type == "-h" ]]; then
+    echo -e "\nHourly Traffic Chart:\n"
+    echo "$vnstat_output" | grep -E "^[[:space:]]*[0-9]{2}:00" | awk '{printf "%s %s %s\n", $1, $2, $3}' | while read hour rx tx; do
+        rx_bar=$(printf "%.0s#" $(seq 1 $(echo $rx | awk '{print int($1/0.1)}')))
+        tx_bar=$(printf "%.0s#" $(seq 1 $(echo $tx | awk '{print int($1/0.1)}')))
+        printf "%-5s | RX: %-50s | TX: %-50s\n" "$hour" "$rx_bar" "$tx_bar"
+    done
+fi
