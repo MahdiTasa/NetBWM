@@ -2,6 +2,7 @@ import os
 import subprocess
 from datetime import datetime
 import matplotlib.pyplot as plt
+import time
 
 # Function to parse vnstat output for hourly, daily, and monthly statistics
 def parse_vnstat_output(report_type):
@@ -24,8 +25,8 @@ def extract_data(vnstat_output):
                     'rx': parts[1] + ' ' + parts[2],
                     'tx': parts[4] + ' ' + parts[5],
                     'total': parts[7] + ' ' + parts[8],
-                    'avg_rate_rx': parts[9] + ' ' + parts[10],
-                    'avg_rate_tx': parts[11] + ' ' + parts[12] if len(parts) > 12 else ''
+                    'avg_rate_rx': parts[9] + ' ' + parts[10] if len(parts) > 10 and parts[9] != '|' else '',
+                    'avg_rate_tx': parts[11] + ' ' + parts[12] if len(parts) > 12 and parts[11] != '|' else ''
                 })
         except IndexError:
             pass
@@ -74,7 +75,11 @@ def calculate_totals(report_type):
 # Function to plot bandwidth usage
 def plot_bandwidth(data):
     times = [entry['time'] for entry in data]
-    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx']]
+    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx'] and entry['avg_rate_rx'].split()[0].replace('.', '', 1).isdigit()]
+
+    if not rx_rates:
+        print("No valid data available for plotting.")
+        return
 
     plt.figure(figsize=(10, 6))
     plt.plot(times, rx_rates, label='Receive Rate (rx)', color='b')
@@ -89,7 +94,9 @@ def plot_bandwidth(data):
 
 # Main function to provide the menu and options to the user
 def main():
-    while True:
+    retry_count = 0
+    max_retries = 3
+    while retry_count < max_retries:
         print("Choose a report type:")
         print("1) Hourly (-h)")
         print("2) Daily (-d)")
@@ -100,6 +107,10 @@ def main():
             break
         else:
             print("Invalid choice. Please enter a number between 1 and 3.")
+            retry_count += 1
+    else:
+        print("Maximum retry limit reached. Exiting.")
+        return
 
     report_type = '-h' if choice == '1' else ('-d' if choice == '2' else '-m')
     vnstat_output = parse_vnstat_output(report_type)
