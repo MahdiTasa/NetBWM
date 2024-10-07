@@ -14,19 +14,24 @@ def extract_data(vnstat_output):
     lines = vnstat_output.splitlines()
     data = []
     for line in lines:
-        try:
-            parts = line.split()
-            if len(parts) >= 11 and ':' in parts[0]:
-                data.append({
-                    'time': parts[0],
-                    'rx': parts[1] + ' ' + parts[2],
-                    'tx': parts[4] + ' ' + parts[5],
-                    'total': parts[7] + ' ' + parts[8],
-                    'avg_rate_rx': parts[9] + ' ' + parts[10],
-                    'avg_rate_tx': parts[11] + ' ' + parts[12] if len(parts) > 12 else ''
-                })
-        except IndexError:
-            pass
+        line = line.strip()
+        # Skip the table header and separator lines
+        if line.startswith('+') or line.startswith('| Time') or line.startswith('| ---'):
+            continue
+        if not line.startswith('|'):
+            continue
+        # Split the line by '|' and strip whitespace from each part
+        parts = line.strip('|').split('|')
+        parts = [part.strip() for part in parts]
+        if len(parts) >= 6:
+            data.append({
+                'time': parts[0],
+                'rx': parts[1],
+                'tx': parts[2],
+                'total': parts[3],
+                'avg_rate_rx': parts[4],
+                'avg_rate_tx': parts[5]
+            })
     return data
 
 # Function to display parsed data
@@ -40,31 +45,35 @@ def display_data(data):
 
 # Function to calculate overall sum for rx and tx across interfaces
 def calculate_totals(report_type):
-    command = ["vnstat"]
+    command = ["vnstat", report_type]
     result = subprocess.run(command, capture_output=True, text=True)
     lines = result.stdout.splitlines()
 
     total_rx = 0
     total_tx = 0
     for line in lines:
-        if 'rx' in line and 'tx' in line and report_type in line:
+        if 'rx' in line and 'tx' in line and not line.startswith(' '):
             parts = line.split()
             try:
-                rx_value = float(parts[1].replace('GiB', '').replace('MiB', '').replace('KiB', ''))
-                tx_value = float(parts[4].replace('GiB', '').replace('MiB', '').replace('KiB', ''))
-                if 'GiB' in parts[1]:
+                rx_value = float(parts[1])
+                rx_unit = parts[2]
+                tx_value = float(parts[4])
+                tx_unit = parts[5]
+
+                if rx_unit == 'GiB':
                     total_rx += rx_value
-                elif 'MiB' in parts[1]:
+                elif rx_unit == 'MiB':
                     total_rx += rx_value / 1024
-                elif 'KiB' in parts[1]:
+                elif rx_unit == 'KiB':
                     total_rx += rx_value / (1024 * 1024)
-                if 'GiB' in parts[4]:
+
+                if tx_unit == 'GiB':
                     total_tx += tx_value
-                elif 'MiB' in parts[4]:
+                elif tx_unit == 'MiB':
                     total_tx += tx_value / 1024
-                elif 'KiB' in parts[4]:
+                elif tx_unit == 'KiB':
                     total_tx += tx_value / (1024 * 1024)
-            except ValueError:
+            except (ValueError, IndexError):
                 pass
 
     return total_rx, total_tx
@@ -72,21 +81,51 @@ def calculate_totals(report_type):
 # Function to plot bandwidth usage
 def plot_bandwidth(data):
     times = [entry['time'] for entry in data]
-    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx'] and entry['avg_rate_rx'] != '|']
+    
+    # Convert average rates to float and handle units
+    rx_rates = []
+    tx_rates = []
+    for entry in data:
+        # Process average receive rate
+        avg_rx = entry['avg_rate_rx']
+        if avg_rx:
+            rx_value, rx_unit = avg_rx.split()
+            rx_value = float(rx_value)
+            if rx_unit == 'kbit/s':
+                rx_value /= 1000  # Convert to Mbit/s
+            elif rx_unit == 'Gbit/s':
+                rx_value *= 1000  # Convert to Mbit/s
+            rx_rates.append(rx_value)
+        else:
+            rx_rates.append(0)
 
-    # Ensure times and rx_rates have matching length
+        # Process average transmit rate
+        avg_tx = entry['avg_rate_tx']
+        if avg_tx:
+            tx_value, tx_unit = avg_tx.split()
+            tx_value = float(tx_value)
+            if tx_unit == 'kbit/s':
+                tx_value /= 1000  # Convert to Mbit/s
+            elif tx_unit == 'Gbit/s':
+                tx_value *= 1000  # Convert to Mbit/s
+            tx_rates.append(tx_value)
+        else:
+            tx_rates.append(0)
+
+    # Ensure times, rx_rates, and tx_rates have matching length
     if not times or not rx_rates or len(times) != len(rx_rates):
         print("\nError: Insufficient data for plotting bandwidth usage.")
         return
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(times, rx_rates, label='Receive Rate (rx)', color='b')
+    plt.figure(figsize=(12, 6))
+    plt.plot(times, rx_rates, label='Receive Rate (Mbit/s)', color='b', marker='o')
+    plt.plot(times, tx_rates, label='Transmit Rate (Mbit/s)', color='g', marker='o')
     plt.xlabel('Time')
     plt.ylabel('Bandwidth (Mbit/s)')
-    plt.title('Bandwidth Usage (Receive) - 98% Capacity')
-    plt.axhline(y=0.98 * max(rx_rates), color='r', linestyle='--', label='98% Capacity')
+    plt.title('Bandwidth Usage (Receive and Transmit)')
     plt.xticks(rotation=45)
     plt.legend()
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
 
