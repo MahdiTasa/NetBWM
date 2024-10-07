@@ -1,72 +1,103 @@
 import subprocess
-import json
 import matplotlib.pyplot as plt
+import re
 
-# Function to parse vnstat output in JSON format
-def parse_vnstat_json(report_type):
-    command = ["env", "LANG=C", "vnstat", report_type, "--json"]
+# Function to parse vnstat output for hourly, daily, and monthly statistics
+def parse_vnstat_output(report_type):
+    command = ["vnstat", report_type]
     result = subprocess.run(command, capture_output=True, text=True)
-    if result.returncode != 0:
-        print("Error running vnstat:", result.stderr)
-        return None
-    data = json.loads(result.stdout)
+    return result.stdout
+
+# Function to parse size strings like '9.41 GiB'
+def parse_size(size_str):
+    match = re.match(r'([0-9.]+)\s*(\w+)', size_str)
+    if not match:
+        return 0
+    value, unit = match.groups()
+    value = float(value)
+    unit = unit.strip()
+    units = {
+        'B': 1,
+        'KiB': 1024,
+        'MiB': 1024 ** 2,
+        'GiB': 1024 ** 3,
+        'TiB': 1024 ** 4,
+    }
+    return value * units.get(unit, 1)
+
+# Function to parse rate strings like '44.41 Mbit/s'
+def parse_rate(rate_str):
+    match = re.match(r'([0-9.]+)\s*(\w+)', rate_str)
+    if not match:
+        return 0
+    value, unit = match.groups()
+    value = float(value)
+    unit = unit.strip()
+    units = {
+        'bit/s': 1e-6,
+        'kbit/s': 1e-3,
+        'Mbit/s': 1,
+        'Gbit/s': 1e3,
+    }
+    return value * units.get(unit, 1)  # Return rate in Mbit/s
+
+# Function to extract relevant data from vnstat output
+def extract_data(vnstat_output):
+    lines = vnstat_output.splitlines()
+    data = []
+    current_date = ''
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines and separator lines
+        if not line or line.startswith('----') or line.startswith('vnstat'):
+            continue
+        # Capture the date line
+        if re.match(r'\d{4}-\d{2}-\d{2}', line):
+            current_date = line
+            continue
+        # Skip headers
+        if line.startswith('hour') or line.startswith('day') or line.startswith('month') or line.startswith('year'):
+            continue
+        if 'rx' in line and 'tx' in line:
+            continue
+        if 'estimated' in line:
+            continue
+        # Parse data lines
+        if '|' in line:
+            # Replace multiple spaces with single space
+            line = re.sub(r'\s+', ' ', line)
+            # Split the line by '|'
+            parts = line.split('|')
+            if len(parts) != 4:
+                continue
+            left_part = parts[0].strip()
+            tx_part = parts[1].strip()
+            total_part = parts[2].strip()
+            avg_rate_part = parts[3].strip()
+            # Extract time and rx
+            left_parts = left_part.split()
+            if len(left_parts) < 3:
+                continue
+            time_str = left_parts[0]
+            rx_value_str = ' '.join(left_parts[1:])
+            # Build full time
+            if current_date:
+                time = f"{current_date} {time_str}"
+            else:
+                time = time_str
+            # Parse numerical values
+            rx_value = parse_size(rx_value_str)
+            tx_value = parse_size(tx_part)
+            total_value = parse_size(total_part)
+            avg_rate_value = parse_rate(avg_rate_part)
+            data.append({
+                'time': time,
+                'rx': rx_value,
+                'tx': tx_value,
+                'total': total_value,
+                'avg_rate': avg_rate_value,  # in Mbit/s
+            })
     return data
-
-# Function to extract relevant data from vnstat JSON output
-def extract_data(data, report_type):
-    result = []
-    interface = data['interfaces'][0]  # Assuming only one interface
-    traffic = interface['traffic']
-
-    if report_type == '-h':
-        hours = traffic['hours']
-        for hour in hours:
-            time = '{:02d}:00'.format(hour['hour'])
-            rx = hour['rx']
-            tx = hour['tx']
-            total = rx + tx
-            result.append({
-                'time': time,
-                'rx': rx,
-                'tx': tx,
-                'total': total,
-                'avg_rate_rx': rx / 3600 * 8 / 1e6,  # Convert bytes to Mbit/s
-                'avg_rate_tx': tx / 3600 * 8 / 1e6,
-            })
-    elif report_type == '-d':
-        days = traffic['days']
-        for day in days:
-            date = day['date']
-            time = '{year}-{month:02d}-{day:02d}'.format(**date)
-            rx = day['rx']
-            tx = day['tx']
-            total = rx + tx
-            result.append({
-                'time': time,
-                'rx': rx,
-                'tx': tx,
-                'total': total,
-                'avg_rate_rx': rx / (24 * 3600) * 8 / 1e6,  # Mbit/s
-                'avg_rate_tx': tx / (24 * 3600) * 8 / 1e6,
-            })
-    elif report_type == '-m':
-        months = traffic['months']
-        for month in months:
-            date = month['date']
-            time = '{year}-{month:02d}'.format(**date)
-            rx = month['rx']
-            tx = month['tx']
-            total = rx + tx
-            days_in_month = month['days']
-            result.append({
-                'time': time,
-                'rx': rx,
-                'tx': tx,
-                'total': total,
-                'avg_rate_rx': rx / (days_in_month * 24 * 3600) * 8 / 1e6,  # Mbit/s
-                'avg_rate_tx': tx / (days_in_month * 24 * 3600) * 8 / 1e6,
-            })
-    return result
 
 # Function to display parsed data
 def display_data(data):
@@ -74,28 +105,34 @@ def display_data(data):
     print("| Time                | Received (rx)| Transmitted (tx)| Total        | Avg Rate RX  | Avg Rate TX  |")
     print("+---------------------+--------------+--------------+--------------+--------------+--------------+")
     for entry in data:
-        rx_str = '{:.2f} MiB'.format(entry['rx'] / (1024*1024))
-        tx_str = '{:.2f} MiB'.format(entry['tx'] / (1024*1024))
-        total_str = '{:.2f} MiB'.format(entry['total'] / (1024*1024))
-        avg_rate_rx_str = '{:.2f} Mbit/s'.format(entry['avg_rate_rx'])
-        avg_rate_tx_str = '{:.2f} Mbit/s'.format(entry['avg_rate_tx'])
-        print(f"| {entry['time']:<19} | {rx_str:<12} | {tx_str:<12} | {total_str:<12} | {avg_rate_rx_str:<12} | {avg_rate_tx_str:<12} |")
+        rx_str = f"{entry['rx'] / (1024 ** 2):.2f} MiB"
+        tx_str = f"{entry['tx'] / (1024 ** 2):.2f} MiB"
+        total_str = f"{entry['total'] / (1024 ** 2):.2f} MiB"
+        avg_rate_str = f"{entry['avg_rate']:.2f} Mbit/s"
+        print(f"| {entry['time']:<19} | {rx_str:<12} | {tx_str:<12} | {total_str:<12} | {avg_rate_str:<12} | {'':<12} |")
     print("+---------------------+--------------+--------------+--------------+--------------+--------------+")
+
+# Function to calculate overall sum for rx and tx across interfaces
+def calculate_totals(data):
+    total_rx = sum(entry['rx'] for entry in data)
+    total_tx = sum(entry['tx'] for entry in data)
+    return total_rx, total_tx
 
 # Function to plot bandwidth usage
 def plot_bandwidth(data):
     times = [entry['time'] for entry in data]
-    rx_rates = [entry['avg_rate_rx'] for entry in data]
-    tx_rates = [entry['avg_rate_tx'] for entry in data]
+    rx_rates = [entry['avg_rate'] for entry in data]  # avg_rate is in Mbit/s
+    tx_rates = [entry['tx'] * 8 / (3600 * 1e6) for entry in data]  # Convert bytes to Mbit/s assuming 1-hour intervals
 
-    plt.figure(figsize=(12,6))
-    plt.plot(times, rx_rates, label='Receive Rate (Mbit/s)', marker='o')
-    plt.plot(times, tx_rates, label='Transmit Rate (Mbit/s)', marker='o')
+    plt.figure(figsize=(12, 6))
+    plt.plot(times, rx_rates, label='Avg Receive Rate (Mbit/s)', color='b', marker='o')
+    plt.plot(times, tx_rates, label='Avg Transmit Rate (Mbit/s)', color='g', marker='o')
     plt.xlabel('Time')
     plt.ylabel('Bandwidth (Mbit/s)')
     plt.title('Bandwidth Usage')
     plt.xticks(rotation=45)
     plt.legend()
+    plt.grid(True)
     plt.tight_layout()
     plt.show()
 
@@ -114,23 +151,18 @@ def main():
             print("Invalid choice. Please enter a number between 1 and 3.")
 
     report_type = '-h' if choice == '1' else ('-d' if choice == '2' else '-m')
-    vnstat_data = parse_vnstat_json(report_type)
-    if not vnstat_data:
-        print("Error: Could not retrieve vnstat data.")
-        return
-
-    data = extract_data(vnstat_data, report_type)
+    vnstat_output = parse_vnstat_output(report_type)
+    data = extract_data(vnstat_output)
     if not data:
         print("\nError: No data available to display.")
         return
 
     display_data(data)
 
-    total_rx = sum(entry['rx'] for entry in data) / (1024*1024*1024)
-    total_tx = sum(entry['tx'] for entry in data) / (1024*1024*1024)
+    total_rx, total_tx = calculate_totals(data)
     print("\nTotal Bandwidth Usage Across All Interfaces:")
-    print(f"Total Received: {total_rx:.2f} GiB")
-    print(f"Total Transmitted: {total_tx:.2f} GiB")
+    print(f"Total Received: {total_rx / (1024 ** 3):.2f} GiB")
+    print(f"Total Transmitted: {total_tx / (1024 ** 3):.2f} GiB")
 
     plot_bandwidth(data)
 
