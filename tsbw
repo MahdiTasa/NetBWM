@@ -77,9 +77,11 @@ tx_in_bits=$(convert_to_bits $tx_value_number $tx_value_unit)
 if [[ $report_type == "-h" ]]; then
   duration=3600
 elif [[ $report_type == "-d" ]]; then
-  duration=$((24 * 3600))
+  current_hour=$(date +"%H")
+  duration=$((current_hour * 3600))
 elif [[ $report_type == "-m" ]]; then
-  duration=$((30 * 24 * 3600))
+  day_of_month=$(date +"%d")
+  duration=$((day_of_month * 24 * 3600))
 fi
 
 # Calculate receive and transmit rates in bits per second
