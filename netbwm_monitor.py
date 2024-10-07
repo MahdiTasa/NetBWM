@@ -17,13 +17,14 @@ def extract_data(vnstat_output):
             continue
         try:
             parts = line.split()
-            if len(parts) >= 8:
+            if len(parts) >= 11:
                 data.append({
                     'time': parts[0],
                     'rx': parts[1] + ' ' + parts[2],
                     'tx': parts[4] + ' ' + parts[5],
                     'total': parts[7] + ' ' + parts[8],
-                    'avg_rate': parts[10] + ' ' + parts[11]
+                    'avg_rate_rx': parts[9] + ' ' + parts[10],
+                    'avg_rate_tx': parts[11] + ' ' + parts[12] if len(parts) > 12 else ''
                 })
         except IndexError:
             pass
@@ -31,12 +32,12 @@ def extract_data(vnstat_output):
 
 # Function to display parsed data
 def display_data(data):
-    print("\n+---------------------+--------------+--------------+--------------+--------------+")
-    print("| Time                | Received (rx)| Transmitted (tx)| Total        | Average Rate |")
-    print("+---------------------+--------------+--------------+--------------+--------------+")
+    print("\n+---------------------+--------------+--------------+--------------+--------------+--------------+")
+    print("| Time                | Received (rx)| Transmitted (tx)| Total        | Avg Rate RX  | Avg Rate TX  |")
+    print("+---------------------+--------------+--------------+--------------+--------------+--------------+")
     for entry in data:
-        print(f"| {entry['time']:<19} | {entry['rx']:<12} | {entry['tx']:<12} | {entry['total']:<12} | {entry['avg_rate']:<12} |")
-    print("+---------------------+--------------+--------------+--------------+--------------+")
+        print(f"| {entry['time']:<19} | {entry['rx']:<12} | {entry['tx']:<12} | {entry['total']:<12} | {entry['avg_rate_rx']:<12} | {entry['avg_rate_tx']:<12} |")
+    print("+---------------------+--------------+--------------+--------------+--------------+--------------+")
 
 # Function to calculate overall sum for rx and tx across interfaces
 def calculate_totals(report_type):
