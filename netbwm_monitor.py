@@ -4,8 +4,8 @@ from datetime import datetime
 
 # Function to parse vnstat output for hourly, daily, and monthly statistics
 def parse_vnstat_output(report_type):
-    command = f"vnstat {report_type}"
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    command = ["vnstat", report_type]
+    result = subprocess.run(command, capture_output=True, text=True)
     return result.stdout
 
 # Function to extract relevant data from vnstat output
@@ -17,13 +17,13 @@ def extract_data(vnstat_output):
             continue
         try:
             parts = line.split()
-            if len(parts) >= 4:
+            if len(parts) >= 8:
                 data.append({
                     'time': parts[0],
-                    'rx': parts[1],
-                    'tx': parts[3],
-                    'total': parts[5],
-                    'avg_rate': parts[7]
+                    'rx': parts[1] + ' ' + parts[2],
+                    'tx': parts[4] + ' ' + parts[5],
+                    'total': parts[7] + ' ' + parts[8],
+                    'avg_rate': parts[10] + ' ' + parts[11]
                 })
         except IndexError:
             pass
@@ -40,8 +40,8 @@ def display_data(data):
 
 # Function to calculate overall sum for rx and tx across interfaces
 def calculate_totals(report_type):
-    command = "vnstat"
-    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    command = ["vnstat"]
+    result = subprocess.run(command, capture_output=True, text=True)
     lines = result.stdout.splitlines()
 
     total_rx = 0
