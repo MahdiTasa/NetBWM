@@ -1,6 +1,7 @@
 import os
 import subprocess
 from datetime import datetime
+import matplotlib.pyplot as plt
 
 # Function to parse vnstat output for hourly, daily, and monthly statistics
 def parse_vnstat_output(report_type):
@@ -51,14 +52,40 @@ def calculate_totals(report_type):
         if 'rx' in line and 'tx' in line and report_type in line:
             parts = line.split()
             try:
-                rx_value = float(parts[2])
-                tx_value = float(parts[5])
-                total_rx += rx_value
-                total_tx += tx_value
+                rx_value = float(parts[1].replace('GiB', '').replace('MiB', '').replace('KiB', ''))
+                tx_value = float(parts[4].replace('GiB', '').replace('MiB', '').replace('KiB', ''))
+                if 'GiB' in parts[1]:
+                    total_rx += rx_value
+                elif 'MiB' in parts[1]:
+                    total_rx += rx_value / 1024
+                elif 'KiB' in parts[1]:
+                    total_rx += rx_value / (1024 * 1024)
+                if 'GiB' in parts[4]:
+                    total_tx += tx_value
+                elif 'MiB' in parts[4]:
+                    total_tx += tx_value / 1024
+                elif 'KiB' in parts[4]:
+                    total_tx += tx_value / (1024 * 1024)
             except ValueError:
                 pass
 
     return total_rx, total_tx
+
+# Function to plot bandwidth usage
+def plot_bandwidth(data):
+    times = [entry['time'] for entry in data]
+    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx']]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(times, rx_rates, label='Receive Rate (rx)', color='b')
+    plt.xlabel('Time')
+    plt.ylabel('Bandwidth (Mbit/s)')
+    plt.title('Bandwidth Usage (Receive) - 98% Capacity')
+    plt.axhline(y=0.98 * max(rx_rates), color='r', linestyle='--', label='98% Capacity')
+    plt.xticks(rotation=45)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 # Main function to provide the menu and options to the user
 def main():
@@ -81,8 +108,10 @@ def main():
 
     total_rx, total_tx = calculate_totals(report_type)
     print("\nTotal Bandwidth Usage Across All Interfaces:")
-    print(f"Total Received: {total_rx} GiB")
-    print(f"Total Transmitted: {total_tx} GiB")
+    print(f"Total Received: {total_rx:.2f} GiB")
+    print(f"Total Transmitted: {total_tx:.2f} GiB")
+
+    plot_bandwidth(data)
 
 if __name__ == "__main__":
     main()
