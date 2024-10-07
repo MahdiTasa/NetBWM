@@ -76,7 +76,7 @@ def extract_data(vnstat_output):
             avg_rate_part = parts[3].strip()
             # Extract time and rx
             left_parts = left_part.split()
-            if len(left_parts) < 3:
+            if len(left_parts) < 2:
                 continue
             time_str = left_parts[0]
             rx_value_str = ' '.join(left_parts[1:])
