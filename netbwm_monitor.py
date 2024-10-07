@@ -14,11 +14,9 @@ def extract_data(vnstat_output):
     lines = vnstat_output.splitlines()
     data = []
     for line in lines:
-        if 'rx' in line and 'tx' in line:
-            continue
         try:
             parts = line.split()
-            if len(parts) >= 11:
+            if len(parts) >= 11 and ':' in parts[0]:
                 data.append({
                     'time': parts[0],
                     'rx': parts[1] + ' ' + parts[2],
@@ -74,7 +72,12 @@ def calculate_totals(report_type):
 # Function to plot bandwidth usage
 def plot_bandwidth(data):
     times = [entry['time'] for entry in data]
-    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx'] and '|' not in entry['avg_rate_rx']]
+    rx_rates = [float(entry['avg_rate_rx'].split()[0]) for entry in data if entry['avg_rate_rx'] and entry['avg_rate_rx'] != '|']
+
+    # Ensure times and rx_rates have matching length
+    if not times or not rx_rates or len(times) != len(rx_rates):
+        print("\nError: Insufficient data for plotting bandwidth usage.")
+        return
 
     plt.figure(figsize=(10, 6))
     plt.plot(times, rx_rates, label='Receive Rate (rx)', color='b')
@@ -111,8 +114,7 @@ def main():
     print(f"Total Received: {total_rx:.2f} GiB")
     print(f"Total Transmitted: {total_tx:.2f} GiB")
 
-    if data:
-        plot_bandwidth(data)
+    plot_bandwidth(data)
 
 if __name__ == "__main__":
     main()
