@@ -2,7 +2,7 @@
 
 # Update package list and install necessary packages
 sudo apt-get update
-sudo apt-get install -y python3 python3-venv curl
+sudo apt-get install -y python3 python3-venv curl vnstat
 
 # Create a directory for the NetBWM project
 mkdir -p /opt/netbwm
@@ -48,7 +48,7 @@ fi
 cat <<'EOL' | sudo tee /usr/local/bin/tsbw
 #!/bin/bash
 source /opt/netbwm/venv/bin/activate
-python /opt/netbwm/netbwm_monitor.py
+python /opt/netbwm/netbwm_monitor.py $@
 EOL
 
 # Make the tsbw command executable

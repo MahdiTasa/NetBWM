@@ -1,39 +1,65 @@
 import os
-import psutil
-import time
+import subprocess
 from datetime import datetime
-import matplotlib.pyplot as plt
 
-# Function to gather network usage statistics for all interfaces
-def get_network_stats():
-    return psutil.net_io_counters(pernic=True)
+# Function to parse vnstat output for hourly, daily, and monthly statistics
+def parse_vnstat_output(report_type):
+    command = f"vnstat {report_type}"
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    return result.stdout
 
-# Function to calculate rate in bits per second
-def calculate_rate(bytes_before, bytes_after, duration):
-    bytes_diff = bytes_after - bytes_before
-    bits = bytes_diff * 8
-    return bits / duration
+# Function to extract relevant data from vnstat output
+def extract_data(vnstat_output):
+    lines = vnstat_output.splitlines()
+    data = []
+    for line in lines:
+        if 'rx' in line and 'tx' in line:
+            continue
+        try:
+            parts = line.split()
+            if len(parts) >= 4:
+                data.append({
+                    'time': parts[0],
+                    'rx': parts[1],
+                    'tx': parts[3],
+                    'total': parts[5],
+                    'avg_rate': parts[7]
+                })
+        except IndexError:
+            pass
+    return data
 
-# Function to display network statistics
-def display_stats(interface, rx_rate, tx_rate):
-    units = ['bit/s', 'Kbit/s', 'Mbit/s', 'Gbit/s']
-    
-    def format_rate(rate):
-        unit_index = 0
-        while rate >= 1000 and unit_index < len(units) - 1:
-            rate /= 1000
-            unit_index += 1
-        return f"{rate:.2f} {units[unit_index]}"
+# Function to display parsed data
+def display_data(data):
+    print("\n+---------------------+--------------+--------------+--------------+--------------+")
+    print("| Time                | Received (rx)| Transmitted (tx)| Total        | Average Rate |")
+    print("+---------------------+--------------+--------------+--------------+--------------+")
+    for entry in data:
+        print(f"| {entry['time']:<19} | {entry['rx']:<12} | {entry['tx']:<12} | {entry['total']:<12} | {entry['avg_rate']:<12} |")
+    print("+---------------------+--------------+--------------+--------------+--------------+")
 
-    print(f"\nInterface: {interface}")
-    print("+----------------------+--------------------+")
-    print("| Bandwidth Rates      |                    |")
-    print("+----------------------+--------------------+")
-    print(f"| Receive rate:        | {format_rate(rx_rate):<18} |")
-    print(f"| Transmit rate:       | {format_rate(tx_rate):<18} |")
-    print("+----------------------+--------------------+")
+# Function to calculate overall sum for rx and tx across interfaces
+def calculate_totals(report_type):
+    command = "vnstat"
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    lines = result.stdout.splitlines()
 
-# Main function
+    total_rx = 0
+    total_tx = 0
+    for line in lines:
+        if 'rx' in line and 'tx' in line and report_type in line:
+            parts = line.split()
+            try:
+                rx_value = float(parts[2])
+                tx_value = float(parts[5])
+                total_rx += rx_value
+                total_tx += tx_value
+            except ValueError:
+                pass
+
+    return total_rx, total_tx
+
+# Main function to provide the menu and options to the user
 def main():
     while True:
         print("Choose a report type:")
@@ -48,85 +74,14 @@ def main():
             print("Invalid choice. Please enter a number between 1 and 3.")
 
     report_type = '-h' if choice == '1' else ('-d' if choice == '2' else '-m')
+    vnstat_output = parse_vnstat_output(report_type)
+    data = extract_data(vnstat_output)
+    display_data(data)
 
-    # Get sleep duration from user
-    while True:
-        try:
-            sleep_duration = float(input("Enter the data collection interval in seconds (e.g., 1 for hourly report): "))
-            if sleep_duration > 0:
-                break
-            else:
-                print("Please enter a positive number.")
-        except ValueError:
-            print("Invalid input. Please enter a numeric value.")
-
-    if report_type == '-h':
-        # Hourly Report
-        for hour in range(24):
-            stats_before = get_network_stats()
-            start_time = time.time()
-            time.sleep(sleep_duration)  # Use configurable sleep duration
-            end_time = time.time()
-            duration = end_time - start_time
-            stats_after = get_network_stats()
-            
-            for interface in stats_before:
-                if interface in stats_after:
-                    try:
-                        rx_before = stats_before[interface].bytes_recv
-                        tx_before = stats_before[interface].bytes_sent
-                        rx_after = stats_after[interface].bytes_recv
-                        tx_after = stats_after[interface].bytes_sent
-                        
-                        rx_rate = calculate_rate(rx_before, rx_after, duration)
-                        tx_rate = calculate_rate(tx_before, tx_after, duration)
-                        display_stats(interface, rx_rate, tx_rate)
-                    except AttributeError:
-                        print(f"Skipping interface '{interface}' due to missing data.")
-    elif report_type == '-d':
-        # Daily Report
-        stats_before = get_network_stats()
-        start_time = time.time()
-        time.sleep(86400)  # Simulate data collection for a day
-        end_time = time.time()
-        duration = end_time - start_time
-        stats_after = get_network_stats()
-        
-        for interface in stats_before:
-            if interface in stats_after:
-                try:
-                    rx_before = stats_before[interface].bytes_recv
-                    tx_before = stats_before[interface].bytes_sent
-                    rx_after = stats_after[interface].bytes_recv
-                    tx_after = stats_after[interface].bytes_sent
-                    
-                    rx_rate = calculate_rate(rx_before, rx_after, duration)
-                    tx_rate = calculate_rate(tx_before, tx_after, duration)
-                    display_stats(interface, rx_rate, tx_rate)
-                except AttributeError:
-                    print(f"Skipping interface '{interface}' due to missing data.")
-    elif report_type == '-m':
-        # Monthly Report
-        stats_before = get_network_stats()
-        start_time = time.time()
-        time.sleep(2592000)  # Simulate data collection for a month (30 days)
-        end_time = time.time()
-        duration = end_time - start_time
-        stats_after = get_network_stats()
-        
-        for interface in stats_before:
-            if interface in stats_after:
-                try:
-                    rx_before = stats_before[interface].bytes_recv
-                    tx_before = stats_before[interface].bytes_sent
-                    rx_after = stats_after[interface].bytes_recv
-                    tx_after = stats_after[interface].bytes_sent
-                    
-                    rx_rate = calculate_rate(rx_before, rx_after, duration)
-                    tx_rate = calculate_rate(tx_before, tx_after, duration)
-                    display_stats(interface, rx_rate, tx_rate)
-                except AttributeError:
-                    print(f"Skipping interface '{interface}' due to missing data.")
+    total_rx, total_tx = calculate_totals(report_type)
+    print("\nTotal Bandwidth Usage Across All Interfaces:")
+    print(f"Total Received: {total_rx} GiB")
+    print(f"Total Transmitted: {total_tx} GiB")
 
 if __name__ == "__main__":
     main()
